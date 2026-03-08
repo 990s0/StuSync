@@ -1,11 +1,11 @@
-import React, { useState, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
-import DropDownPicker from 'react-native-dropdown-picker';
 import { useNavigation } from '@react-navigation/native';
+import * as Haptics from 'expo-haptics';
+import React, { useRef, useState } from 'react';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import DropDownPicker from 'react-native-dropdown-picker';
 import { generateStudyQuestions } from '../services/groq';
 import { getCourses, getRooms, searchCourses, searchRooms } from '../services/nebula';
 import { createSession, getCurrentUser } from '../services/supabase';
-import * as Haptics from 'expo-haptics';
 
 export default function HostSessionScreen() {
   const navigation = useNavigation();
