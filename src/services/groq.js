@@ -98,7 +98,7 @@ export async function generateStudyQuestions(itinerary, subject) {
     const url = 'https://api.groq.com/openai/v1/chat/completions';
     
     const payload = {
-      model: 'llama-3.1-70b-versatile',
+      model: 'llama-3.3-70b-versatile',
       messages: [{
         role: 'user',
         content: `Based on the following study itinerary for the subject "${subject}":\n"${itinerary}"\n\nGenerate 3 to 5 study questions that cover these topics to help a student study. Format the output as a clean list of questions.`
@@ -144,7 +144,7 @@ export async function generateQuizQuestions(itinerary, subject) {
   try {
     const url = 'https://api.groq.com/openai/v1/chat/completions';
     const payload = {
-      model: 'llama-3.1-70b-versatile',
+      model: 'llama-3.3-70b-versatile',
       messages: [{
         role: 'user',
         content: `You are generating a Kahoot-style quiz for the subject "${subject}" based on this study itinerary:\n"${itinerary}"\n\nGenerate exactly 5 multiple choice questions. Return ONLY a valid JSON array with no markdown or extra text. Use this exact format:\n[{"question": "...", "choices": ["A", "B", "C", "D"], "correct": 0}]\nWhere "correct" is the 0-based index of the correct choice.`
