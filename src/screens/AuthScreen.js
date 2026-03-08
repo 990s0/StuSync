@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, ScrollView, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import axios from 'axios';
+import { signUp, signIn } from '../services/supabase';
+import * as Haptics from 'expo-haptics';
 
 export default function AuthScreen() {
   const navigation = useNavigation();
@@ -9,99 +10,182 @@ export default function AuthScreen() {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [authStatus, setAuthStatus] = useState('');
 
   const handleAuth = async () => {
-    if (!email.includes('@')) {
-      Alert.alert("Invalid Email", "Please use a valid school email address.");
+    console.log("!!! SIGN UP / LOGIN BUTTON PRESSED !!!");
+    if (!isLogin && !email.includes('@')) {
+      Alert.alert("Invalid Email", "Please use a valid email address.");
+      return;
+    }
+    if (!password || password.length < 6) {
+      Alert.alert("Invalid Password", "Password must be at least 6 characters.");
+      return;
+    }
+    if (!isLogin && !username) {
+      Alert.alert("Username Required", "Please enter a username.");
       return;
     }
 
+    setIsLoading(true);
+    setAuthStatus('');
+    console.log("handleAuth started", { isLogin, email, username });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
     try {
-      // Mocking school email authentication using Axios as requested
-      // In a real app we would await axios.post('https://our-backend.com/api/auth', {email, password})
-      console.log("Authenticating school email using Axios (mock)");
-      
-      // Navigate to Home upon success
-      navigation.replace('Home');
+      let result;
+      if (isLogin) {
+        // For login, we use email but the user might type username in the same field
+        // Simple logic for this demo: if it doesn't have @, we assume it's username (but Supabase Auth usually needs email)
+        // Let's assume the user provides email for now, or we'd need to fetch user by username first.
+        result = await signIn(email || username, password);
+      } else {
+        result = await signUp(email, password, username);
+      }
+
+      if (result.success) {
+        console.log("Auth Successful Payload:", result.data);
+        const userData = result.data.user || result.data;
+        const sessionData = result.data.session || (result.data.access_token ? result.data : null);
+
+        // If identities is empty or session is missing, email confirmation might be needed
+        if (!isLogin && (!sessionData || (userData.identities && userData.identities.length === 0))) {
+          setAuthStatus("Success! CHECK YOUR EMAIL to confirm your account.");
+          Alert.alert("Check Your Email", "Signup successful! Please confirm your email before logging in.");
+          setIsLogin(true);
+        } else {
+          setAuthStatus("Success! Redirecting...");
+          navigation.replace('Home');
+        }
+      } else {
+        const errorMsg = typeof result.error === 'string' ? result.error : "Please try again.";
+        console.error("Auth Failure Error:", result.error);
+        setAuthStatus("Error: " + errorMsg);
+        Alert.alert("Auth Error", errorMsg);
+      }
     } catch (e) {
-      Alert.alert("Error", "Authentication failed");
+      console.error("Auth Exception:", e);
+      setAuthStatus("Unexpected Error occurred.");
+      Alert.alert("Error", "An unexpected error occurred during authentication.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{isLogin ? 'Welcome Back!' : 'Create Account'}</Text>
-      
-      {!isLogin && (
-        <View style={styles.inputContainer}>
-          <Text style={styles.inputLabel}>Username / Full Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Type your username or name"
-            value={username}
-            onChangeText={setUsername}
-          />
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={{ flex: 1 }}
+    >
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.container}>
+          <Text style={styles.title}>{isLogin ? 'Welcome Back!' : 'Create Account'}</Text>
+          
+          {!isLogin && (
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Username / Full Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Type your username or name"
+                value={username}
+                onChangeText={setUsername}
+              />
+            </View>
+          )}
+
+          {isLogin && (
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Username or Email</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Type your username or school email"
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+              />
+            </View>
+          )}
+
+          {!isLogin && (
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>School Email</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Type your .edu email"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+          )}
+          
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Password</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Type your password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+          </View>
+
+          {authStatus ? (
+            <View style={styles.statusBox}>
+              <Text style={styles.statusText}>{authStatus}</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity 
+            style={[styles.button, isLoading && { opacity: 0.7 }, { borderWidth: 2, borderColor: '#3B82F6' }]} 
+            onPress={() => {
+              console.log(">>> CLICK DETECTED ON SIGNUP/LOGIN BUTTON <<<");
+              handleAuth();
+            }}
+            disabled={isLoading}
+            activeOpacity={0.6}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={styles.buttonText}>{isLogin ? 'Login' : 'Sign Up'}</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => setIsLogin(!isLogin)} style={styles.switchButton}>
+            <Text style={styles.switchText}>
+              {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Login"}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            onPress={() => navigation.replace('Home')} 
+            style={styles.skipButton}
+          >
+            <Text style={styles.skipText}>Skip to Dashboard (Test Mode)</Text>
+          </TouchableOpacity>
         </View>
-      )}
-
-      {isLogin && (
-        <View style={styles.inputContainer}>
-          <Text style={styles.inputLabel}>Username or Email</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Type your username or school email"
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-          />
-        </View>
-      )}
-
-      {!isLogin && (
-        <View style={styles.inputContainer}>
-          <Text style={styles.inputLabel}>School Email</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Type your .edu email"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-        </View>
-      )}
-      
-      <View style={styles.inputContainer}>
-        <Text style={styles.inputLabel}>Password</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Type your password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
-      </View>
-
-      <TouchableOpacity style={styles.button} onPress={handleAuth}>
-        <Text style={styles.buttonText}>{isLogin ? 'Login' : 'Sign Up'}</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity onPress={() => setIsLogin(!isLogin)} style={styles.switchButton}>
-        <Text style={styles.switchText}>
-          {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Login"}
-        </Text>
-      </TouchableOpacity>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: '#FAF9F6',
-    alignItems: 'center',
-    justifyContent: 'center',
     padding: 20,
+    width: '100%',
+    alignItems: 'center',
+    backgroundColor: '#FAF9F6',
+  },
+  scrollContent: {
+    flexGrow: 1,
+    backgroundColor: '#FAF9F6',
+    justifyContent: 'center', // Center content vertically
   },
   title: {
     fontSize: 32,
@@ -146,5 +230,28 @@ const styles = StyleSheet.create({
   switchText: {
     color: '#3B82F6',
     fontSize: 16,
+  },
+  statusBox: {
+    width: '100%',
+    padding: 12,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 10,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  statusText: {
+    color: '#92400E',
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  skipButton: {
+    marginTop: 30,
+    padding: 10,
+  },
+  skipText: {
+    color: '#64748B',
+    fontSize: 14,
+    textDecorationLine: 'underline',
   }
 });
