@@ -29,12 +29,12 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "image": "./assets/images/stusync-logo.png",
+          "imageWidth": 300,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#7C4DFF",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#1A0A3C"
           }
         }
       ]

@@ -28,6 +28,8 @@ export default function HostGameScreen() {
   const [hostAnswer, setHostAnswer] = useState(null);
   const [hostAnswered, setHostAnswered] = useState(false);
   const [startTime, setStartTime] = useState(null);
+  const [respondents, setRespondents] = useState([]); // List of attendees who answered
+  const [bonusPoints, setBonusPoints] = useState({}); // Track bonus points by user
   const timerRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -98,6 +100,14 @@ export default function HostGameScreen() {
   const showQuestion = (index, qs) => {
     setAnswerCounts([0, 0, 0, 0]);
     setResponseCount(0);
+    setRespondents([]);
+    setBonusPoints({});
+    setHostAnswer(null);
+    setHostAnswered(false);
+    setStartTime(Date.now());
+    setTimer(15);
+    setPhase('question');
+    fadeIn();
     setHostAnswer(null);
     setHostAnswered(false);
     setStartTime(Date.now());
@@ -162,6 +172,13 @@ export default function HostGameScreen() {
     }
   };
 
+  const toggleBonusPoints = (userId) => {
+    setBonusPoints((prev) => ({
+      ...prev,
+      [userId]: prev[userId] ? 0 : 25, // Toggle 25 bonus points
+    }));
+  };
+
   useEffect(() => {
     return () => clearInterval(timerRef.current);
   }, []);
@@ -199,7 +216,7 @@ export default function HostGameScreen() {
             // Count responses for current question
             const { count: respCount, data: responses } = await supabase
               .from('responses')
-              .select('answer_index')
+              .select('user_id, answer_index, id')
               .eq('session_id', session.id)
               .eq('question_id', currentQuestion.id);
 
@@ -214,6 +231,15 @@ export default function HostGameScreen() {
                 }
               });
               setAnswerCounts(counts);
+
+              // Build respondents list with user info
+              const respondentsList = (responses || []).map((r) => ({
+                userId: r.user_id,
+                responseId: r.id,
+                answered: r.answer_index,
+                isCorrect: r.answer_index === currentQuestion.correct,
+              }));
+              setRespondents(respondentsList);
 
               // If all attendees answered, stop timer and show results
               if (respCount >= count && count > 0) {
@@ -342,6 +368,34 @@ export default function HostGameScreen() {
               {hostAnswer === currentQ?.correct ? '✅ You got it right!' : '❌ You got it wrong'}
             </Text>
           )}
+          
+          {/* Point Assignment Section */}
+          <View style={styles.pointsSection}>
+            <Text style={styles.pointsLabel}>🎯 Award Bonus Points (+25)</Text>
+            <Text style={styles.pointsSubtext}>Tap attendees who got it right</Text>
+            <View style={styles.respondentsList}>
+              {respondents
+                .filter((r) => r.isCorrect)
+                .map((respondent) => (
+                  <TouchableOpacity
+                    key={respondent.userId}
+                    style={[
+                      styles.respondentTile,
+                      bonusPoints[respondent.userId] && styles.respondentSelected,
+                    ]}
+                    onPress={() => toggleBonusPoints(respondent.userId)}
+                  >
+                    <Text style={styles.respondentText}>
+                      {respondent.userId.substring(0, 8)}...
+                    </Text>
+                    {bonusPoints[respondent.userId] > 0 && (
+                      <Text style={styles.pointsBadge}>+25</Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+            </View>
+          </View>
+          
           <TouchableOpacity style={styles.nextBtn} onPress={nextQuestion}>
             <Text style={styles.nextBtnText}>
               {currentIndex + 1 >= questions.length ? 'Finish Game 🏆' : 'Next Question →'}
@@ -444,6 +498,39 @@ const styles = StyleSheet.create({
   hostFeedback: { fontSize: 15, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' },
   hostCorrect: { color: '#4CAF50' },
   hostWrong: { color: '#FF6B6B' },
+  pointsSection: {
+    width: '100%',
+    marginVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#7C4DFF',
+    paddingTop: 12,
+  },
+  pointsLabel: { color: '#FFD700', fontSize: 15, fontWeight: 'bold', marginBottom: 4 },
+  pointsSubtext: { color: '#B39DDB', fontSize: 13, marginBottom: 12 },
+  respondentsList: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  respondentTile: {
+    backgroundColor: '#3D2577',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 2,
+    borderColor: '#9575CD',
+    minWidth: '40%',
+    alignItems: 'center',
+  },
+  respondentSelected: {
+    backgroundColor: '#FFD700',
+    borderColor: '#FFC700',
+  },
+  respondentText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  pointsBadge: { color: '#2D1B69', fontSize: 11, fontWeight: 'bold', marginTop: 2 },
   nextBtn: {
     backgroundColor: '#7C4DFF',
     paddingVertical: 14,
