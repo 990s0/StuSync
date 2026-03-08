@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import DropDownPicker from 'react-native-dropdown-picker';
 import { useNavigation } from '@react-navigation/native';
 import { generateStudyQuestions } from '../services/gemini';
 import { getCourses, getRooms, searchCourses, searchRooms } from '../services/nebula';
-import { createSession, getCurrentUser } from '../services/supabase';
+import { createSession, getCurrentUser, testConnection } from '../services/supabase';
 import * as Haptics from 'expo-haptics';
 
 export default function HostSessionScreen() {
@@ -12,6 +12,7 @@ export default function HostSessionScreen() {
   const [room, setRoom] = useState('');
   const [subject, setSubject] = useState('');
   const [itinerary, setItinerary] = useState('');
+  const sessionCreated = useRef(false); // Prevents duplicate submissions
   
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -93,42 +94,55 @@ export default function HostSessionScreen() {
 
   const handleCreateSession = async () => {
     console.log("handleCreateSession called");
+
+    // Prevent duplicate submissions
+    if (sessionCreated.current || isLoading) return;
+
     console.log("Current State - Room:", room, "Subject:", subject);
     
     if (!room || !subject) {
-      console.log("Validation failed: Room or Subject missing");
       Alert.alert("Missing Info", "Room and Subject are required.");
       return;
     }
 
+    sessionCreated.current = true; // Lock immediately
     setIsLoading(true);
+
     try {
       const user = getCurrentUser();
       console.log("Attempting to save session to Supabase as user:", user?.id);
       
       const result = await createSession({
         title: itinerary ? (itinerary.length > 30 ? itinerary.substring(0, 30) + "..." : itinerary) : "Study Session",
-        class: subject,
-        building: room,
+        subject: subject,
+        room: room,
         itinerary: itinerary,
-        hostName: user?.user_metadata?.username || user?.email || "Student",
-        hostMajor: "Student", // Could be expanded to user profile if available
-        hostId: user?.id
+        host_name: user?.user_metadata?.username || user?.email || "Student",
+        host_major: "Student",
+        host_id: user?.id
       });
+      
+      console.log("Supabase Create Result:", result);
 
       if (result.success) {
-        console.log("Session created in Supabase!");
-        Alert.alert("Success", "Session Created! Notifications have been sent to relevant students.", [
-          { text: "OK", onPress: () => {
-            console.log("Navigation to Home triggered");
-            navigation.replace('Home');
-          }}
-        ]);
+        const createdSession = result.data || { subject, room, itinerary, title: 'Study Session' };
+        console.log("Session created:", createdSession);
+        Alert.alert(
+          "Session Created! 🎉",
+          "Would you like to start the quiz game for your session now?",
+          [
+            { text: "Start Quiz 🎮", onPress: () => navigation.replace('HostGame', { session: createdSession }) },
+            { text: "Go Home", onPress: () => navigation.replace('Home') }
+          ]
+        );
       } else {
+        // If failed, unlock so user can retry
+        sessionCreated.current = false;
         console.error("Supabase Save Failed:", result.error);
-        Alert.alert("Error", "Could not save session. Please try again.");
+        Alert.alert("Save Failed", result.error || "Could not save session.");
       }
     } catch (e) {
+      sessionCreated.current = false;
       console.error("Session Creation Error:", e);
       Alert.alert("Error", "An unexpected error occurred.");
     } finally {

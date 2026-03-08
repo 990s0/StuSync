@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, ActivityIndicator, RefreshControl } from 'react-native';
 import { MapPin, BookOpen, User, Filter } from 'lucide-react-native';
+import { useNavigation } from '@react-navigation/native';
 import { getSessions } from '../services/supabase';
 
 // Mock data reflecting what would be in Firestore
@@ -12,6 +13,7 @@ const mockSessions = [
 ];
 
 export default function FindSessionsScreen() {
+  const navigation = useNavigation();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -38,11 +40,11 @@ export default function FindSessionsScreen() {
   const applySort = (option) => {
     let sorted = [...sessions];
     if (option === 'Class') {
-      sorted.sort((a, b) => a.class.localeCompare(b.class));
+      sorted.sort((a, b) => (a.subject || '').localeCompare(b.subject || ''));
     } else if (option === 'Building') {
-      sorted.sort((a, b) => a.building.localeCompare(b.building));
+      sorted.sort((a, b) => (a.room || '').localeCompare(b.room || ''));
     } else if (option === 'Host Major') {
-      sorted.sort((a, b) => a.hostMajor.localeCompare(b.hostMajor));
+      sorted.sort((a, b) => (a.host_major || '').localeCompare(b.host_major || ''));
     }
     setSessions(sorted);
     setSortOption(option);
@@ -55,22 +57,30 @@ export default function FindSessionsScreen() {
       
       <View style={styles.detailRow}>
         <BookOpen color="#10B981" size={18} />
-        <Text style={styles.detailText}>{item.class}</Text>
+        <Text style={styles.detailText}>{item.subject}</Text>
       </View>
       
       <View style={styles.detailRow}>
         <MapPin color="#EF4444" size={18} />
-        <Text style={styles.detailText}>{item.building}</Text>
+        <Text style={styles.detailText}>{item.room}</Text>
       </View>
 
       <View style={styles.detailRow}>
         <User color="#3B82F6" size={18} />
-        <Text style={styles.detailText}>Host: {item.hostName} ({item.hostMajor})</Text>
+        <Text style={styles.detailText}>Host: {item.host_name}</Text>
       </View>
 
-      <TouchableOpacity style={styles.joinButton}>
-        <Text style={styles.joinButtonText}>Join Session</Text>
-      </TouchableOpacity>
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 15 }}>
+        <TouchableOpacity style={[styles.joinButton, { flex: 1 }]}>
+          <Text style={styles.joinButtonText}>Join Session</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.joinButton, { flex: 1, backgroundColor: '#7C4DFF' }]}
+          onPress={() => navigation.navigate('Game', { session: item })}
+        >
+          <Text style={styles.joinButtonText}>🎮 Join Quiz</Text>
+        </TouchableOpacity>
+      </View>
     </TouchableOpacity>
   );
 

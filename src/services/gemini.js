@@ -47,3 +47,29 @@ export async function generateStudyQuestions(itinerary, subject) {
     return `Error generating questions: ${errorData.message || error.message || "Unknown error"}`;
   }
 }
+
+export async function generateQuizQuestions(itinerary, subject) {
+  if (!API_KEY) return [];
+
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash-lite:generateContent?key=${API_KEY}`;
+    const payload = {
+      contents: [{
+        parts: [{
+          text: `You are generating a Kahoot-style quiz for the subject "${subject}" based on this study itinerary:\n"${itinerary}"\n\nGenerate exactly 5 multiple choice questions. Return ONLY a valid JSON array with no markdown or extra text. Use this exact format:\n[{"question": "...", "choices": ["A", "B", "C", "D"], "correct": 0}]\nWhere "correct" is the 0-based index of the correct choice.`
+        }]
+      }]
+    };
+
+    const response = await axios.post(url, payload);
+    const raw = response.data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    // Strip markdown code fences if present
+    const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const questions = JSON.parse(cleaned);
+    console.log('Quiz questions generated:', questions.length);
+    return questions;
+  } catch (error) {
+    console.error('Quiz generation error:', error.message);
+    return [];
+  }
+}

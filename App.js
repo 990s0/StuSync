@@ -9,6 +9,8 @@ import HomeScreen from './src/screens/HomeScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import FindSessionsScreen from './src/screens/FindSessionsScreen';
 import HostSessionScreen from './src/screens/HostSessionScreen';
+import HostGameScreen from './src/screens/HostGameScreen';
+import GameScreen from './src/screens/GameScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -19,7 +21,7 @@ export default function App() {
         initialRouteName="Title"
         screenOptions={{
           headerStyle: {
-            backgroundColor: '#1E3A8A',
+            backgroundColor: '#1A0A3C',
           },
           headerTintColor: '#fff',
           headerTitleStyle: {
@@ -56,6 +58,16 @@ export default function App() {
           name="HostSession" 
           component={HostSessionScreen} 
           options={{ title: 'Host a Session' }} 
+        />
+        <Stack.Screen 
+          name="HostGame" 
+          component={HostGameScreen} 
+          options={{ title: '🎮 Quiz Controller', headerStyle: { backgroundColor: '#1A0A3C' } }} 
+        />
+        <Stack.Screen 
+          name="Game" 
+          component={GameScreen} 
+          options={{ title: '🎮 Quiz Time!', headerStyle: { backgroundColor: '#1A0A3C' } }} 
         />
       </Stack.Navigator>
     </NavigationContainer>

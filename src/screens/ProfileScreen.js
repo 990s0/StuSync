@@ -1,38 +1,88 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { User, Star, Award, BookOpen, Presentation } from 'lucide-react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { User, Star, Award, BookOpen, Presentation, LogOut } from 'lucide-react-native';
+import { useNavigation } from '@react-navigation/native';
+import { getCurrentUser } from '../services/supabase';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.EXPO_PUBLIC_SUPABASE_URL,
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+);
 
 export default function ProfileScreen() {
-  // Mock User Data
-  const userProfile = {
-    name: "Alex Johnson",
-    gradeLevel: "Junior",
-    major: "Computer Science",
-    starRating: 4.8,
-    sessionsJoined: 12,
-    sessionsHosted: 5,
-    totalPoints: 850
+  const navigation = useNavigation();
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadUser();
+  }, []);
+
+  const loadUser = async () => {
+    setLoading(true);
+    try {
+      // Try to get the current session from Supabase directly
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUser(session.user);
+      } else {
+        // Fall back to cached user from our service
+        const cached = getCurrentUser();
+        setUser(cached);
+      }
+    } catch (e) {
+      console.error('Profile load error:', e);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const handleSignOut = async () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => {
+          await supabase.auth.signOut();
+          navigation.replace('Auth');
+        }
+      }
+    ]);
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+      </View>
+    );
+  }
+
+  const displayName = user?.user_metadata?.username || user?.email?.split('@')[0] || 'Student';
+  const email = user?.email || 'Not signed in';
+  const initials = displayName.substring(0, 2).toUpperCase();
 
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.avatarPlaceholder}>
-          <User color="white" size={60} />
+          <Text style={styles.avatarInitials}>{initials}</Text>
         </View>
-        <Text style={styles.name}>{userProfile.name}</Text>
-        <Text style={styles.subText}>{userProfile.gradeLevel} • {userProfile.major}</Text>
+        <Text style={styles.name}>{displayName}</Text>
+        <Text style={styles.subText}>{email}</Text>
       </View>
 
       <View style={styles.statsContainer}>
         <View style={styles.statBox}>
           <Star color="#F59E0B" size={30} />
-          <Text style={styles.statValue}>{userProfile.starRating}</Text>
+          <Text style={styles.statValue}>New</Text>
           <Text style={styles.statLabel}>Rating</Text>
         </View>
         <View style={styles.statBox}>
           <Award color="#3B82F6" size={30} />
-          <Text style={styles.statValue}>{userProfile.totalPoints}</Text>
+          <Text style={styles.statValue}>0</Text>
           <Text style={styles.statLabel}>Points</Text>
         </View>
       </View>
@@ -42,7 +92,7 @@ export default function ProfileScreen() {
           <BookOpen color="#64748B" size={24} />
           <View style={styles.detailTextContainer}>
             <Text style={styles.detailTitle}>Sessions Joined</Text>
-            <Text style={styles.detailValue}>{userProfile.sessionsJoined}</Text>
+            <Text style={styles.detailValue}>0</Text>
           </View>
         </View>
 
@@ -52,10 +102,33 @@ export default function ProfileScreen() {
           <Presentation color="#64748B" size={24} />
           <View style={styles.detailTextContainer}>
             <Text style={styles.detailTitle}>Sessions Hosted</Text>
-            <Text style={styles.detailValue}>{userProfile.sessionsHosted}</Text>
+            <Text style={styles.detailValue}>0</Text>
+          </View>
+        </View>
+
+        <View style={styles.divider} />
+
+        <View style={styles.detailRow}>
+          <User color="#64748B" size={24} />
+          <View style={styles.detailTextContainer}>
+            <Text style={styles.detailTitle}>Account ID</Text>
+            <Text style={[styles.detailValue, { fontSize: 12, color: '#94A3B8' }]}>
+              {user?.id ? user.id.substring(0, 16) + '...' : 'Not signed in'}
+            </Text>
           </View>
         </View>
       </View>
+
+      {user ? (
+        <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
+          <LogOut color="white" size={18} />
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity style={styles.signInBtn} onPress={() => navigation.navigate('Auth')}>
+          <Text style={styles.signInText}>Sign In / Create Account</Text>
+        </TouchableOpacity>
+      )}
     </ScrollView>
   );
 }
@@ -66,7 +139,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   header: {
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#1A0A3C',
     alignItems: 'center',
     paddingVertical: 40,
     borderBottomLeftRadius: 30,
@@ -76,12 +149,17 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#7C4DFF',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 15,
     borderWidth: 3,
     borderColor: 'white'
+  },
+  avatarInitials: {
+    color: 'white',
+    fontSize: 36,
+    fontWeight: 'bold',
   },
   name: {
     fontSize: 26,
@@ -89,8 +167,8 @@ const styles = StyleSheet.create({
     color: 'white',
   },
   subText: {
-    fontSize: 16,
-    color: '#BFDBFE',
+    fontSize: 14,
+    color: '#B39DDB',
     marginTop: 5,
   },
   statsContainer: {
@@ -156,5 +234,34 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#E2E8F0',
     marginVertical: 5,
-  }
+  },
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EF4444',
+    marginHorizontal: 20,
+    marginBottom: 40,
+    padding: 15,
+    borderRadius: 12,
+    gap: 8,
+  },
+  signOutText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  signInBtn: {
+    backgroundColor: '#7C4DFF',
+    marginHorizontal: 20,
+    marginBottom: 40,
+    padding: 15,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  signInText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
 });
