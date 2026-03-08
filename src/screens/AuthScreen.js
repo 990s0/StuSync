@@ -39,7 +39,7 @@ export default function AuthScreen() {
         // For login, we use email but the user might type username in the same field
         // Simple logic for this demo: if it doesn't have @, we assume it's username (but Supabase Auth usually needs email)
         // Let's assume the user provides email for now, or we'd need to fetch user by username first.
-        result = await signIn(email || username, password);
+        result = await signIn(email, password);
       } else {
         result = await signUp(email, password, username);
       }
@@ -55,7 +55,7 @@ export default function AuthScreen() {
           Alert.alert("Check Your Email", "Signup successful! Please confirm your email before logging in.");
           setIsLogin(true);
         } else {
-          setAuthStatus("Success! Redirecting...");
+          setAuthStatus("Success!");
           navigation.replace('Home');
         }
       } else {
@@ -97,33 +97,17 @@ export default function AuthScreen() {
             </View>
           )}
 
-          {isLogin && (
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Username or Email</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Type your username or school email"
-                value={username}
-                onChangeText={setUsername}
-                autoCapitalize="none"
-              />
-            </View>
-          )}
-
-          {!isLogin && (
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>School Email</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Type your .edu email"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
-          )}
-          
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>{isLogin ? 'Email' : 'School Email'}</Text>
+            <TextInput
+              style={styles.input}
+              placeholder={isLogin ? "Type your school email" : "Type your .edu email"}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+          </View>
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Password</Text>
             <TextInput
@@ -163,12 +147,7 @@ export default function AuthScreen() {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            onPress={() => navigation.replace('Home')} 
-            style={styles.skipButton}
-          >
-            <Text style={styles.skipText}>Skip to Dashboard (Test Mode)</Text>
-          </TouchableOpacity>
+
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -245,13 +224,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: 'bold',
   },
-  skipButton: {
-    marginTop: 30,
-    padding: 10,
-  },
-  skipText: {
-    color: '#64748B',
-    fontSize: 14,
-    textDecorationLine: 'underline',
-  }
+
 });

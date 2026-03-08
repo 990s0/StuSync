@@ -4,13 +4,7 @@ import { MapPin, BookOpen, User, Filter } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { getSessions } from '../services/supabase';
 
-// Mock data reflecting what would be in Firestore
-const mockSessions = [
-  { id: '1', class: 'CS 314', building: 'GDC', hostMajor: 'Computer Science', hostName: 'Alice', title: 'Data Structures Midterm Prep' },
-  { id: '2', class: 'BIO 311C', building: 'WEL', hostMajor: 'Biology', hostName: 'Bob', title: 'Intro Bio Chapter 4' },
-  { id: '3', class: 'M 408D', building: 'PMA', hostMajor: 'Mathematics', hostName: 'Charlie', title: 'Calculus II Integration Practice' },
-  { id: '4', class: 'CS 429', building: 'GDC', hostMajor: 'Computer Engineering', hostName: 'Diana', title: 'Architecture Assembly Review' },
-];
+
 
 export default function FindSessionsScreen() {
   const navigation = useNavigation();
@@ -70,17 +64,12 @@ export default function FindSessionsScreen() {
         <Text style={styles.detailText}>Host: {item.host_name}</Text>
       </View>
 
-      <View style={{ flexDirection: 'row', gap: 10, marginTop: 15 }}>
-        <TouchableOpacity style={[styles.joinButton, { flex: 1 }]}>
-          <Text style={styles.joinButtonText}>Join Session</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.joinButton, { flex: 1, backgroundColor: '#7C4DFF' }]}
-          onPress={() => navigation.navigate('Game', { session: item })}
-        >
-          <Text style={styles.joinButtonText}>🎮 Join Quiz</Text>
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity
+        style={styles.joinButton}
+        onPress={() => navigation.navigate('Lobby', { session: item, isHost: false })}
+      >
+        <Text style={styles.joinButtonText}>Join Session</Text>
+      </TouchableOpacity>
     </TouchableOpacity>
   );
 

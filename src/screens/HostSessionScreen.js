@@ -4,7 +4,7 @@ import DropDownPicker from 'react-native-dropdown-picker';
 import { useNavigation } from '@react-navigation/native';
 import { generateStudyQuestions } from '../services/gemini';
 import { getCourses, getRooms, searchCourses, searchRooms } from '../services/nebula';
-import { createSession, getCurrentUser, testConnection } from '../services/supabase';
+import { createSession, getCurrentUser } from '../services/supabase';
 import * as Haptics from 'expo-haptics';
 
 export default function HostSessionScreen() {
@@ -109,7 +109,7 @@ export default function HostSessionScreen() {
     setIsLoading(true);
 
     try {
-      const user = getCurrentUser();
+      const user = await getCurrentUser();
       console.log("Attempting to save session to Supabase as user:", user?.id);
       
       const result = await createSession({
@@ -127,14 +127,7 @@ export default function HostSessionScreen() {
       if (result.success) {
         const createdSession = result.data || { subject, room, itinerary, title: 'Study Session' };
         console.log("Session created:", createdSession);
-        Alert.alert(
-          "Session Created! 🎉",
-          "Would you like to start the quiz game for your session now?",
-          [
-            { text: "Start Quiz 🎮", onPress: () => navigation.replace('HostGame', { session: createdSession }) },
-            { text: "Go Home", onPress: () => navigation.replace('Home') }
-          ]
-        );
+        navigation.replace('Lobby', { session: createdSession, isHost: true });
       } else {
         // If failed, unlock so user can retry
         sessionCreated.current = false;

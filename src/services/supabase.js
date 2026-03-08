@@ -1,16 +1,42 @@
 import { createClient } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+/*
+ * Required Supabase Tables (create in the Supabase dashboard):
+ *
+ * game_sessions: id, title, subject, room, itinerary, host_name, host_id, created_at
+ * lobby_members: id, session_id, user_id, joined_at
+ * questions:     id, session_id, question, choices (jsonb), correct, order_index
+ * responses:     id, session_id, question_id, user_id, answer_index, time_taken
+ */
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-// Official Supabase client - handles schema cache, auth tokens, and retries automatically
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Official Supabase client with AsyncStorage for persistent sessions
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    storage: AsyncStorage,
+    autoRefreshToken: true,
+    persistSession: false,
+    detectSessionInUrl: false,
+  },
+});
 
 console.log("Supabase SDK Initialized with URL:", SUPABASE_URL);
 
-let currentUser = null;
-
-export const getCurrentUser = () => currentUser;
+/**
+ * Returns the current authenticated user from Supabase Auth (async).
+ */
+export async function getCurrentUser() {
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error) throw error;
+    return user;
+  } catch (error) {
+    return null;
+  }
+}
 
 /**
  * Signs up a new user using the official Supabase Auth SDK
@@ -25,7 +51,6 @@ export async function signUp(email, password, username) {
     });
 
     if (error) throw error;
-    currentUser = data.user;
     return { success: true, data };
   } catch (error) {
     console.error("Supabase Signup Error:", error.message);
@@ -45,8 +70,7 @@ export async function signIn(email, password) {
     });
 
     if (error) throw error;
-    currentUser = data.user;
-    return { success: true, session: data.session };
+    return { success: true, data: { user: data.user, session: data.session } };
   } catch (error) {
     console.error("Supabase Signin Error:", error.message);
     return { success: false, error: error.message };
@@ -67,6 +91,7 @@ export async function createSession(sessionData) {
         room: sessionData.room,
         itinerary: sessionData.itinerary,
         host_name: sessionData.host_name || "Student",
+        host_id: sessionData.host_id,
         created_at: new Date().toISOString()
       }])
       .select();
@@ -215,5 +240,33 @@ export async function getLeaderboard(sessionId) {
   } catch (error) {
     console.error('getLeaderboard error:', error.message);
     return [];
+  }
+}
+
+/**
+ * Inserts a row into lobby_members for Realtime presence
+ */
+export async function joinLobby(sessionId, userId) {
+  try {
+    await supabase.from('lobby_members')
+      .upsert({ session_id: sessionId, user_id: userId });
+    return { success: true };
+  } catch (error) {
+    return { success: false };
+  }
+}
+
+/**
+ * Removes a row from lobby_members on leave
+ */
+export async function leaveLobby(sessionId, userId) {
+  try {
+    await supabase.from('lobby_members')
+      .delete()
+      .eq('session_id', sessionId)
+      .eq('user_id', userId);
+    return { success: true };
+  } catch (error) {
+    return { success: false };
   }
 }

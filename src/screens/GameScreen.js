@@ -24,13 +24,13 @@ export default function GameScreen() {
   const timerRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  const user = getCurrentUser();
 
   useEffect(() => {
     loadQuestions();
   }, []);
 
   const loadQuestions = async () => {
+    const user = await getCurrentUser();
     const qs = await getQuestions(session.id);
     if (!qs || qs.length === 0) {
       setPhase('no_questions');
@@ -79,6 +79,7 @@ export default function GameScreen() {
     setScore(prev => prev + points);
     setPhase('answered');
 
+    const user = await getCurrentUser();
     if (q.id && user?.id) {
       await saveResponse(session.id, q.id, user.id, answerIndex, timeTaken);
     }

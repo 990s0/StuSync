@@ -2,13 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { User, Star, Award, BookOpen, Presentation, LogOut } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
-import { getCurrentUser } from '../services/supabase';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.EXPO_PUBLIC_SUPABASE_URL,
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
-);
+import { getCurrentUser, supabase } from '../services/supabase';
 
 export default function ProfileScreen() {
   const navigation = useNavigation();
@@ -27,8 +21,7 @@ export default function ProfileScreen() {
       if (session?.user) {
         setUser(session.user);
       } else {
-        // Fall back to cached user from our service
-        const cached = getCurrentUser();
+        const cached = await getCurrentUser();
         setUser(cached);
       }
     } catch (e) {
@@ -45,8 +38,12 @@ export default function ProfileScreen() {
         text: 'Sign Out',
         style: 'destructive',
         onPress: async () => {
-          await supabase.auth.signOut();
-          navigation.replace('Auth');
+          try {
+            const { error } = await supabase.auth.signOut();
+            if (error) console.error("Sign out error:", error.message);
+          } catch (e) {
+            console.error("Sign out exception:", e);
+          }
         }
       }
     ]);
