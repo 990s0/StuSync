@@ -188,6 +188,7 @@ export default function HostGameScreen() {
     if (!session?.id || questions.length === 0 || phase !== 'question') return;
 
     let isMounted = true;
+    let subscription;
 
     const setupResponseTracking = async () => {
       // Get attendee count
@@ -202,18 +203,47 @@ export default function HostGameScreen() {
 
       // Subscribe to response changes for this session
       const currentQuestion = questions[currentIndex];
-      const subscription = supabase
-        .channel(`responses_${session.id}`)
+      
+      // Initial count of responses for this question
+      const { count: initialCount = 0, data: initialResponses = [] } = await supabase
+        .from('responses')
+        .select('user_id, answer_index, id')
+        .eq('session_id', session.id)
+        .eq('question_id', currentQuestion.id);
+
+      if (isMounted) {
+        setResponseCount(initialCount);
+        
+        const counts = [0, 0, 0, 0];
+        initialResponses.forEach((resp) => {
+          if (resp.answer_index !== null && resp.answer_index >= 0) {
+            counts[resp.answer_index]++;
+          }
+        });
+        setAnswerCounts(counts);
+
+        const respondentsList = initialResponses.map((r) => ({
+          userId: r.user_id,
+          responseId: r.id,
+          answered: r.answer_index,
+          isCorrect: r.answer_index === currentQuestion.correct,
+        }));
+        setRespondents(respondentsList);
+      }
+
+      // Subscribe to new responses
+      subscription = supabase
+        .channel(`responses_${session.id}_${currentQuestion.id}`)
         .on(
           'postgres_changes',
           {
             event: 'INSERT',
             schema: 'public',
             table: 'responses',
-            filter: `session_id=eq.${session.id}`,
+            filter: `session_id=eq.${session.id},question_id=eq.${currentQuestion.id}`,
           },
           async () => {
-            // Count responses for current question
+            // Recount responses for current question
             const { count: respCount, data: responses } = await supabase
               .from('responses')
               .select('user_id, answer_index, id')
@@ -250,14 +280,15 @@ export default function HostGameScreen() {
           }
         )
         .subscribe();
-
-      return subscription;
     };
 
     setupResponseTracking();
 
     return () => {
       isMounted = false;
+      if (subscription) {
+        supabase.removeChannel(subscription);
+      }
     };
   }, [session?.id, questions, currentIndex, phase]);
 
