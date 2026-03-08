@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "HackAI",
-    "slug": "HackAI",
+    "name": "StuSync",
+    "slug": "StuSync",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "hackai",
+    "icon": "./assets/images/StuSync_logo.png",
+    "scheme": "stusync",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -13,7 +13,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#7C4DFF",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
