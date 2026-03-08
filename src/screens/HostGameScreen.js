@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert, Animated
-} from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { useEffect, useRef, useState } from 'react';
+import {
+    ActivityIndicator, Alert, Animated,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
+} from 'react-native';
 import { generateQuizQuestions } from '../services/gemini';
-import { saveQuestions } from '../services/supabase';
+import { saveQuestions, supabase } from '../services/supabase';
 
 const COLORS = ['#E74C3C', '#3498DB', '#F39C12', '#27AE60'];
 const ICONS = ['▲', '◆', '●', '■'];
@@ -20,12 +23,44 @@ export default function HostGameScreen() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answerCounts, setAnswerCounts] = useState([0, 0, 0, 0]);
   const [timer, setTimer] = useState(15);
+  const [attendeeCount, setAttendeeCount] = useState(0);
+  const [responseCount, setResponseCount] = useState(0);
   const timerRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const fadeIn = () => {
     fadeAnim.setValue(0);
     Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+  };
+
+  const saveQuestionsWithFallback = async (sessionId, questions) => {
+    // First try: use the regular saveQuestions function
+    const saved = await saveQuestions(sessionId, questions);
+    if (saved.success) {
+      return { success: true };
+    }
+
+    // Fallback: try to insert directly to Supabase
+    console.warn('saveQuestions failed, attempting direct insert:', saved.error);
+    try {
+      const rows = questions.map((q, i) => ({
+        session_id: sessionId,
+        question: q.question,
+        choices: q.choices,
+        correct: q.correct,
+        order_index: i,
+      }));
+      const { data, error } = await supabase.from('questions').insert(rows).select();
+      if (error) {
+        console.error('Direct insert fallback also failed:', error.message);
+        return { success: false, error: error.message };
+      }
+      console.log('Direct insert fallback succeeded');
+      return { success: true, data };
+    } catch (error) {
+      console.error('Direct insert exception:', error.message);
+      return { success: false, error: error.message };
+    }
   };
 
   const startGame = async () => {
@@ -40,10 +75,17 @@ export default function HostGameScreen() {
       return;
     }
 
-    const saved = await saveQuestions(session.id, generated);
+    const saved = await saveQuestionsWithFallback(session.id, generated);
     if (!saved.success) {
-      // Use in-memory questions if save fails (graceful degradation)
-      console.warn('Could not save questions, running locally');
+      // Cannot proceed - attendees won't be able to see questions
+      console.error('Failed to save questions to database:', saved.error);
+      Alert.alert(
+        'Database Error',
+        `Could not save questions to the database. Attendees won't be able to join.\n\nError: ${saved.error}\n\nMake sure all required database columns exist (questions table should have: id, session_id, question, choices, correct, order_index).`,
+        [{ text: 'Try Again', onPress: () => setPhase('setup') }]
+      );
+      setPhase('setup');
+      return;
     }
     setQuestions(generated);
     setCurrentIndex(0);
@@ -52,6 +94,7 @@ export default function HostGameScreen() {
 
   const showQuestion = (index, qs) => {
     setAnswerCounts([0, 0, 0, 0]);
+    setResponseCount(0);
     setTimer(15);
     setPhase('question');
     fadeIn();
@@ -73,15 +116,96 @@ export default function HostGameScreen() {
     const next = currentIndex + 1;
     if (next >= questions.length) {
       setPhase('leaderboard');
+      // Broadcast game end to attendees
+      supabase.channel(`quiz_${session.id}`).send({
+        type: 'broadcast',
+        event: 'quiz_finished',
+        payload: { sessionId: session.id }
+      });
     } else {
       setCurrentIndex(next);
-      showQuestion(next);
+      showQuestion(next, questions);
+      // Broadcast new question to attendees
+      supabase.channel(`quiz_${session.id}`).send({
+        type: 'broadcast',
+        event: 'advance_question',
+        payload: { questionIndex: next, sessionId: session.id }
+      });
     }
   };
 
   useEffect(() => {
     return () => clearInterval(timerRef.current);
   }, []);
+
+  // Track attendee responses and stop timer when all have answered
+  useEffect(() => {
+    if (!session?.id || questions.length === 0 || phase !== 'question') return;
+
+    let isMounted = true;
+
+    const setupResponseTracking = async () => {
+      // Get attendee count
+      const { count } = await supabase
+        .from('lobby_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('session_id', session.id);
+      
+      if (isMounted) {
+        setAttendeeCount(count || 0);
+      }
+
+      // Subscribe to response changes for this session
+      const currentQuestion = questions[currentIndex];
+      const subscription = supabase
+        .channel(`responses_${session.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'responses',
+            filter: `session_id=eq.${session.id}`,
+          },
+          async () => {
+            // Count responses for current question
+            const { count: respCount, data: responses } = await supabase
+              .from('responses')
+              .select('answer_index')
+              .eq('session_id', session.id)
+              .eq('question_id', currentQuestion.id);
+
+            if (isMounted) {
+              setResponseCount(respCount || 0);
+
+              // Update answer counts
+              const counts = [0, 0, 0, 0];
+              (responses || []).forEach((resp) => {
+                if (resp.answer_index !== null && resp.answer_index >= 0) {
+                  counts[resp.answer_index]++;
+                }
+              });
+              setAnswerCounts(counts);
+
+              // If all attendees answered, stop timer and show results
+              if (respCount >= count && count > 0) {
+                clearInterval(timerRef.current);
+                setPhase('results');
+              }
+            }
+          }
+        )
+        .subscribe();
+
+      return subscription;
+    };
+
+    setupResponseTracking();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [session?.id, questions, currentIndex, phase]);
 
   const currentQ = questions[currentIndex];
 
@@ -131,6 +255,7 @@ export default function HostGameScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.questionCounter}>Q {currentIndex + 1} / {questions.length}</Text>
+        <Text style={styles.responseCounter}>👥 {responseCount}/{attendeeCount}</Text>
         <View style={[styles.timerBadge, timer <= 5 && styles.timerUrgent]}>
           <Text style={styles.timerText}>{timer}s</Text>
         </View>
@@ -209,6 +334,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   questionCounter: { color: '#B39DDB', fontSize: 16, fontWeight: 'bold' },
+  responseCounter: { color: '#9575CD', fontSize: 15, fontWeight: '600' },
   timerBadge: {
     backgroundColor: '#7C4DFF',
     borderRadius: 20,

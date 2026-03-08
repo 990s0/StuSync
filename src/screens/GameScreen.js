@@ -1,10 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
-import {
-  View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Animated
-} from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { getQuestions, saveResponse, getCurrentUser } from '../services/supabase';
+import { useEffect, useRef, useState } from 'react';
+import {
+    ActivityIndicator, Animated,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
+} from 'react-native';
+import { getCurrentUser, getQuestions, saveResponse, supabase } from '../services/supabase';
 
 const COLORS = ['#E74C3C', '#3498DB', '#F39C12', '#27AE60'];
 const ICONS = ['▲', '◆', '●', '■'];
@@ -21,24 +24,78 @@ export default function GameScreen() {
   const [score, setScore] = useState(0);
   const [timer, setTimer] = useState(15);
   const [startTime, setStartTime] = useState(null);
+  const [loadingRetries, setLoadingRetries] = useState(0);
   const timerRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
 
   const loadQuestions = async () => {
-    const qs = await getQuestions(session.id);
-    if (!qs || qs.length === 0) {
-      setPhase('no_questions');
-      return;
+    let retries = 0;
+    const maxRetries = 15; // Try for up to 30 seconds (15 * 2s)
+    
+    while (retries < maxRetries) {
+      setLoadingRetries(retries);
+      const qs = await getQuestions(session.id);
+      if (qs && qs.length > 0) {
+        setQuestions(qs);
+        showQuestion(0, qs);
+        return;
+      }
+      retries++;
+      if (retries < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
+      }
     }
-    setQuestions(qs);
-    showQuestion(0, qs);
+    
+    // If we've retried max times and still no questions, show error
+    setPhase('no_questions');
   };
 
   useEffect(() => {
-    loadQuestions();
+    let isMounted = true;
+    
+    async function init() {
+      if (isMounted) {
+        await loadQuestions();
+      }
+    }
+    
+    init();
+    
+    return () => {
+      isMounted = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Listen for host-controlled question advancement
+  useEffect(() => {
+    if (!session?.id) return;
+    
+    let isMounted = true;
+    const channel = supabase.channel(`quiz_${session.id}`);
+    
+    const subscription = channel.on('broadcast', { event: 'advance_question' }, (payload) => {
+      if (isMounted && questions.length > 0) {
+        const nextIndex = payload.payload.questionIndex;
+        setCurrentIndex(nextIndex);
+        setSelectedAnswer(null);
+        showQuestion(nextIndex, questions);
+      }
+    }).on('broadcast', { event: 'quiz_finished' }, () => {
+      if (isMounted) {
+        clearInterval(timerRef.current);
+        setPhase('finished');
+      }
+    }).subscribe();
+
+    return () => {
+      isMounted = false;
+      if (subscription) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [session?.id, questions]);
 
   const fadeIn = () => {
     fadeAnim.setValue(0);
@@ -48,23 +105,10 @@ export default function GameScreen() {
   const showQuestion = (index, qs) => {
     const questionList = qs || questions;
     setSelectedAnswer(null);
-    setTimer(15);
     setStartTime(Date.now());
     setPhase('question');
     fadeIn();
-
-    clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setTimer(prev => {
-        if (prev <= 1) {
-          clearInterval(timerRef.current);
-          // Time's up — auto-submit no answer
-          handleAnswer(null, questionList[index]);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    // Attendees don't have a local timer - host controls timing
   };
 
   const handleAnswer = async (answerIndex, questionOverride) => {
@@ -106,6 +150,9 @@ export default function GameScreen() {
       <View style={styles.container}>
         <ActivityIndicator size="large" color="#fff" />
         <Text style={styles.loadingText}>Loading quiz...</Text>
+        {loadingRetries > 0 && (
+          <Text style={styles.loadingSubtext}>Waiting for host to start... ({loadingRetries})</Text>
+        )}
       </View>
     );
   }
@@ -146,9 +193,6 @@ export default function GameScreen() {
       <View style={styles.header}>
         <Text style={styles.scorePill}>⭐ {score.toLocaleString()}</Text>
         <Text style={styles.questionCounter}>{currentIndex + 1} / {questions.length}</Text>
-        <View style={[styles.timerBadge, timer <= 5 && styles.timerUrgent]}>
-          <Text style={styles.timerText}>{timer}</Text>
-        </View>
       </View>
 
       {/* Question */}
@@ -184,11 +228,9 @@ export default function GameScreen() {
           <Text style={styles.feedbackText}>
             {selectedAnswer === currentQ?.correct ? '✅ Correct!' : '❌ Wrong!'}
           </Text>
-          <TouchableOpacity style={styles.nextBtn} onPress={nextQuestion}>
-            <Text style={styles.nextBtnText}>
-              {currentIndex + 1 >= questions.length ? 'See Results 🏆' : 'Next →'}
-            </Text>
-          </TouchableOpacity>
+          <Text style={styles.waitingForHostText}>
+            Waiting for host to continue...
+          </Text>
         </View>
       )}
     </Animated.View>
@@ -204,6 +246,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   loadingText: { color: '#fff', marginTop: 16, fontSize: 16 },
+  loadingSubtext: { color: '#B39DDB', marginTop: 8, fontSize: 13 },
   errorEmoji: { fontSize: 60, marginBottom: 12 },
   errorText: { color: '#fff', fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginBottom: 8 },
   errorSub: { color: '#B39DDB', fontSize: 15, textAlign: 'center', marginBottom: 24 },
@@ -297,11 +340,5 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   feedbackText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  nextBtn: {
-    backgroundColor: '#7C4DFF',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 50,
-  },
-  nextBtnText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
+  waitingForHostText: { color: '#B39DDB', fontSize: 14, marginTop: 12, textAlign: 'center', fontStyle: 'italic' },
 });

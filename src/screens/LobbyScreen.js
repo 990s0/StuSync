@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { supabase, getCurrentUser, joinLobby, leaveLobby, deleteSession, getQuestions } from '../services/supabase';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { deleteSession, getCurrentUser, getQuestions, joinLobby, leaveLobby, supabase } from '../services/supabase';
 
 export default function LobbyScreen() {
   const navigation = useNavigation();
@@ -85,12 +85,16 @@ export default function LobbyScreen() {
         if (qs && qs.length > 0) {
           clearInterval(intervalId);
           intervalId = null;
-          navigation.navigate('Game', { session });
+          // Add small delay to ensure data is fully propagated
+          await new Promise(resolve => setTimeout(resolve, 500));
+          if (isMounted) {
+            navigation.navigate('Game', { session });
+          }
         }
       } catch (e) {
         console.error('Error checking for quiz start:', e);
       }
-    }, 2000);
+    }, 1000); // Check every 1 second instead of 2
 
     return () => {
       isMounted = false;

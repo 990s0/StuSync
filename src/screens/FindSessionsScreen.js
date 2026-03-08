@@ -1,8 +1,8 @@
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { BookOpen, Filter, MapPin, User } from 'lucide-react-native';
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, ActivityIndicator, RefreshControl } from 'react-native';
-import { MapPin, BookOpen, User, Filter } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
-import { getSessions } from '../services/supabase';
+import { ActivityIndicator, FlatList, Modal, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { getSessions, supabase } from '../services/supabase';
 
 
 
@@ -28,8 +28,50 @@ export default function FindSessionsScreen() {
   };
 
   React.useEffect(() => {
-    loadSessions();
+    let isMounted = true;
+    let subscription = null;
+
+    async function setup() {
+      await loadSessions();
+      if (!isMounted) return;
+
+      // Subscribe to realtime changes on game_sessions
+      subscription = supabase
+        .channel('public_game_sessions')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'game_sessions',
+          },
+          async () => {
+            // Refresh sessions list when any change occurs
+            if (isMounted) {
+              const data = await getSessions();
+              setSessions(data);
+            }
+          }
+        )
+        .subscribe();
+    }
+
+    setup();
+
+    return () => {
+      isMounted = false;
+      if (subscription) {
+        supabase.removeChannel(subscription);
+      }
+    };
   }, []);
+
+  // Refresh when screen comes back into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      loadSessions();
+    }, [])
+  );
 
   const applySort = (option) => {
     let sorted = [...sessions];
