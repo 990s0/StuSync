@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert, ScrollView, Animated
+  ActivityIndicator, Alert, Animated
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { generateQuizQuestions } from '../services/gemini';
-import { saveQuestions, getQuestions } from '../services/supabase';
+import { saveQuestions } from '../services/supabase';
 
 const COLORS = ['#E74C3C', '#3498DB', '#F39C12', '#27AE60'];
 const ICONS = ['▲', '◆', '●', '■'];
@@ -51,7 +51,6 @@ export default function HostGameScreen() {
   };
 
   const showQuestion = (index, qs) => {
-    const questionList = qs || questions;
     setAnswerCounts([0, 0, 0, 0]);
     setTimer(15);
     setPhase('question');

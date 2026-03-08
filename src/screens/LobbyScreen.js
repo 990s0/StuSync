@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { supabase, getCurrentUser, joinLobby, leaveLobby } from '../services/supabase';
-import { generateStudyQuestions } from '../services/gemini';
+import { supabase, getCurrentUser, joinLobby, leaveLobby, deleteSession, getQuestions } from '../services/supabase';
 
 export default function LobbyScreen() {
   const navigation = useNavigation();
@@ -10,8 +9,6 @@ export default function LobbyScreen() {
   const { session, isHost } = route.params;
 
   const [attendeeCount, setAttendeeCount] = useState(0);
-  const [studyQuestions, setStudyQuestions] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
   const userRef = useRef(null);
 
   useEffect(() => {
@@ -73,18 +70,77 @@ export default function LobbyScreen() {
         supabase.removeChannel(subscription);
       }
     };
-  }, []);
+  }, [session.id]);
 
-  const handleGenerateQuestions = async () => {
-    if (!session?.itinerary || !session?.subject) return;
-    setIsGenerating(true);
+  // Non-hosts: watch for quiz start (questions created) and auto-join game
+  useEffect(() => {
+    if (isHost || !session?.id) return;
+
+    let isMounted = true;
+    const sessionId = session.id;
+    let intervalId = setInterval(async () => {
+      try {
+        const qs = await getQuestions(sessionId);
+        if (!isMounted) return;
+        if (qs && qs.length > 0) {
+          clearInterval(intervalId);
+          intervalId = null;
+          navigation.navigate('Game', { session });
+        }
+      } catch (e) {
+        console.error('Error checking for quiz start:', e);
+      }
+    }, 2000);
+
+    return () => {
+      isMounted = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [isHost, session, navigation]);
+
+  const handleCancelSession = () => {
+    if (!session?.id) {
+      navigation.navigate('Home');
+      return;
+    }
+
+    Alert.alert(
+      'Cancel Session',
+      'End this session for everyone and return to Home?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, cancel',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (userRef.current) {
+                await leaveLobby(session.id, userRef.current.id);
+              }
+              const result = await deleteSession(session.id);
+              if (!result.success) {
+                console.error('Cancel session error:', result.error);
+              }
+            } finally {
+              navigation.navigate('Home');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleLeaveSession = async () => {
     try {
-      const questions = await generateStudyQuestions(session.itinerary, session.subject);
-      setStudyQuestions(questions);
+      if (userRef.current && session?.id) {
+        await leaveLobby(session.id, userRef.current.id);
+      }
     } catch (e) {
-      console.error('Generate questions error:', e);
+      console.error('Leave session error:', e);
     } finally {
-      setIsGenerating(false);
+      navigation.navigate('Home');
     }
   };
 
@@ -118,39 +174,35 @@ export default function LobbyScreen() {
         <Text style={styles.attendeeLabel}>in lobby</Text>
       </View>
 
-      {/* Generate Study Questions */}
-      <TouchableOpacity
-        style={styles.generateButton}
-        onPress={handleGenerateQuestions}
-        disabled={isGenerating}
-      >
-        {isGenerating ? (
-          <ActivityIndicator color="white" />
-        ) : (
-          <Text style={styles.generateButtonText}>✨ Generate Study Questions</Text>
-        )}
-      </TouchableOpacity>
-
-      {studyQuestions ? (
-        <View style={styles.questionsCard}>
-          <Text style={styles.questionsHeader}>Study Questions</Text>
-          <Text style={styles.questionsText}>{studyQuestions}</Text>
-        </View>
-      ) : null}
-
       {/* Host: Start Quiz / Non-host: Waiting */}
       {isHost ? (
-        <TouchableOpacity
-          style={styles.startQuizButton}
-          onPress={() => navigation.navigate('HostGame', { session })}
-        >
-          <Text style={styles.startQuizText}>Start Quiz 🎮</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity
+            style={styles.startQuizButton}
+            onPress={() => navigation.navigate('HostGame', { session })}
+          >
+            <Text style={styles.startQuizText}>Start Quiz 🎮</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={handleCancelSession}
+          >
+            <Text style={styles.cancelButtonText}>Cancel Session</Text>
+          </TouchableOpacity>
+        </>
       ) : (
-        <View style={styles.waitingContainer}>
-          <ActivityIndicator size="small" color="#3B82F6" />
-          <Text style={styles.waitingText}>Waiting for host to start...</Text>
-        </View>
+        <>
+          <View style={styles.waitingContainer}>
+            <ActivityIndicator size="small" color="#3B82F6" />
+            <Text style={styles.waitingText}>Waiting for host to start...</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.leaveButton}
+            onPress={handleLeaveSession}
+          >
+            <Text style={styles.leaveButtonText}>Leave Session</Text>
+          </TouchableOpacity>
+        </>
       )}
     </ScrollView>
   );
@@ -229,41 +281,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#64748B',
   },
-  generateButton: {
-    backgroundColor: '#8B5CF6',
-    padding: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  generateButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  questionsCard: {
-    backgroundColor: '#F3E8FF',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#D8B4FE',
-  },
-  questionsHeader: {
-    fontWeight: 'bold',
-    color: '#6B21A8',
-    marginBottom: 8,
-    fontSize: 16,
-  },
-  questionsText: {
-    color: '#4C1D95',
-    lineHeight: 22,
-  },
   startQuizButton: {
     backgroundColor: '#10B981',
     padding: 18,
@@ -282,6 +299,18 @@ const styles = StyleSheet.create({
     fontSize: 18,
     letterSpacing: 0.5,
   },
+  cancelButton: {
+    backgroundColor: '#EF4444',
+    padding: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  cancelButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
   waitingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -298,5 +327,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#3B82F6',
     fontWeight: '600',
+  },
+  leaveButton: {
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    backgroundColor: '#CBD5F5',
+  },
+  leaveButtonText: {
+    color: '#1D4ED8',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 });

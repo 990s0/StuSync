@@ -98,7 +98,7 @@ export default function FindSessionsScreen() {
       ) : (
         <FlatList
           data={sessions}
-          keyExtractor={item => item.id.toString()}
+          keyExtractor={(item, index) => (item?.id != null ? String(item.id) : `session-${index}`)}
           renderItem={renderSessionItem}
           contentContainerStyle={{ paddingBottom: 20 }}
           refreshControl={

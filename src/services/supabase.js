@@ -13,12 +13,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.error('Supabase env vars missing. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.');
+  throw new Error('Supabase configuration missing. Check your Expo environment variables.');
+}
+
 // Official Supabase client with AsyncStorage for persistent sessions
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: true,
-    persistSession: false,
+    persistSession: true,
     detectSessionInUrl: false,
   },
 });
@@ -33,7 +38,7 @@ export async function getCurrentUser() {
     const { data: { user }, error } = await supabase.auth.getUser();
     if (error) throw error;
     return user;
-  } catch (error) {
+  } catch (_error) {
     return null;
   }
 }
@@ -91,6 +96,7 @@ export async function createSession(sessionData) {
         room: sessionData.room,
         itinerary: sessionData.itinerary,
         host_name: sessionData.host_name || "Student",
+        host_major: sessionData.host_major,
         host_id: sessionData.host_id,
         created_at: new Date().toISOString()
       }])
@@ -133,12 +139,29 @@ export async function getSessions() {
 }
 
 /**
+ * Deletes a study session (used when a host cancels a session)
+ */
+export async function deleteSession(sessionId) {
+  try {
+    const { error } = await supabase
+      .from('game_sessions')
+      .delete()
+      .eq('id', sessionId);
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    console.error('deleteSession error:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * Test the connection to the database
  */
 export async function testConnection() {
   try {
     console.log("Supabase: Testing connection...");
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('game_sessions')
       .select('id')
       .limit(1);
@@ -149,9 +172,9 @@ export async function testConnection() {
     }
     console.log("Supabase Connection Successful!");
     return { success: true };
-  } catch (error) {
-    console.error("Supabase Connection Test Exception:", error.message);
-    return { success: false, error: error.message };
+  } catch (_error) {
+    console.error("Supabase Connection Test Exception:", _error.message);
+    return { success: false, error: _error.message };
   }
 }
 
@@ -229,7 +252,8 @@ export async function getLeaderboard(sessionId) {
     const scores = {};
     (data || []).forEach(r => {
       const uid = r.user_id || 'Anonymous';
-      const isCorrect = r.answer_index === r.questions?.correct;
+      const correctIndex = Array.isArray(r.questions) ? r.questions[0]?.correct : r.questions?.correct;
+      const isCorrect = r.answer_index === correctIndex;
       const bonus = isCorrect ? Math.max(0, 1000 - Math.floor(r.time_taken * 50)) : 0;
       scores[uid] = (scores[uid] || 0) + bonus;
     });
@@ -251,7 +275,7 @@ export async function joinLobby(sessionId, userId) {
     await supabase.from('lobby_members')
       .upsert({ session_id: sessionId, user_id: userId });
     return { success: true };
-  } catch (error) {
+  } catch (_error) {
     return { success: false };
   }
 }
@@ -266,7 +290,7 @@ export async function leaveLobby(sessionId, userId) {
       .eq('session_id', sessionId)
       .eq('user_id', userId);
     return { success: true };
-  } catch (error) {
+  } catch (_error) {
     return { success: false };
   }
 }

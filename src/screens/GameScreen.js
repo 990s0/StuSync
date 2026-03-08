@@ -25,12 +25,7 @@ export default function GameScreen() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
 
-  useEffect(() => {
-    loadQuestions();
-  }, []);
-
   const loadQuestions = async () => {
-    const user = await getCurrentUser();
     const qs = await getQuestions(session.id);
     if (!qs || qs.length === 0) {
       setPhase('no_questions');
@@ -39,6 +34,11 @@ export default function GameScreen() {
     setQuestions(qs);
     showQuestion(0, qs);
   };
+
+  useEffect(() => {
+    loadQuestions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fadeIn = () => {
     fadeAnim.setValue(0);
@@ -114,7 +114,7 @@ export default function GameScreen() {
     return (
       <View style={styles.container}>
         <Text style={styles.errorEmoji}>😕</Text>
-        <Text style={styles.errorText}>The host hasn't started the quiz yet!</Text>
+        <Text style={styles.errorText}>The host hasn&apos;t started the quiz yet!</Text>
         <Text style={styles.errorSub}>Please wait for the host to begin.</Text>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Text style={styles.backBtnText}>Go Back</Text>
