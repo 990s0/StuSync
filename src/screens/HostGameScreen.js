@@ -7,8 +7,8 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { generateQuizQuestions } from '../services/gemini';
-import { saveQuestions, supabase } from '../services/supabase';
+import { generateQuizQuestions } from '../services/groq';
+import { getCurrentUser, saveQuestions, saveResponse, supabase } from '../services/supabase';
 
 const COLORS = ['#E74C3C', '#3498DB', '#F39C12', '#27AE60'];
 const ICONS = ['▲', '◆', '●', '■'];
@@ -25,6 +25,9 @@ export default function HostGameScreen() {
   const [timer, setTimer] = useState(15);
   const [attendeeCount, setAttendeeCount] = useState(0);
   const [responseCount, setResponseCount] = useState(0);
+  const [hostAnswer, setHostAnswer] = useState(null);
+  const [hostAnswered, setHostAnswered] = useState(false);
+  const [startTime, setStartTime] = useState(null);
   const timerRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -95,6 +98,9 @@ export default function HostGameScreen() {
   const showQuestion = (index, qs) => {
     setAnswerCounts([0, 0, 0, 0]);
     setResponseCount(0);
+    setHostAnswer(null);
+    setHostAnswered(false);
+    setStartTime(Date.now());
     setTimer(15);
     setPhase('question');
     fadeIn();
@@ -105,6 +111,12 @@ export default function HostGameScreen() {
         if (prev <= 1) {
           clearInterval(timerRef.current);
           setPhase('results');
+          // Broadcast show_results so attendees see correct answer
+          supabase.channel(`quiz_${session.id}`).send({
+            type: 'broadcast',
+            event: 'show_results',
+            payload: { sessionId: session.id }
+          });
           return 0;
         }
         return prev - 1;
@@ -131,6 +143,22 @@ export default function HostGameScreen() {
         event: 'advance_question',
         payload: { questionIndex: next, sessionId: session.id }
       });
+    }
+  };
+
+  const handleHostAnswer = async (answerIndex) => {
+    if (hostAnswered) return; // Already answered
+
+    setHostAnswer(answerIndex);
+    setHostAnswered(true);
+    
+    const q = questions[currentIndex];
+    const timeTaken = (Date.now() - startTime) / 1000;
+    
+    // Save host's response to database
+    const user = await getCurrentUser();
+    if (q.id && user?.id) {
+      await saveResponse(session.id, q.id, user.id, answerIndex, timeTaken);
     }
   };
 
@@ -219,7 +247,7 @@ export default function HostGameScreen() {
             Quiz: {session.subject}{'\n'}Location: {session.room}
           </Text>
           <Text style={styles.setupNote}>
-            Gemini AI will generate 5 questions from your study itinerary.
+            Groq AI will generate 5 questions from your study itinerary.
           </Text>
           <TouchableOpacity style={styles.startBtn} onPress={startGame}>
             <Text style={styles.startBtnText}>🚀  Start Quiz</Text>
@@ -233,7 +261,7 @@ export default function HostGameScreen() {
     return (
       <View style={styles.container}>
         <ActivityIndicator size="large" color="#fff" />
-        <Text style={styles.generatingText}>Generating quiz questions with Gemini AI...</Text>
+        <Text style={styles.generatingText}>Generating quiz questions with Groq AI...</Text>
       </View>
     );
   }
@@ -268,15 +296,39 @@ export default function HostGameScreen() {
 
       {/* Answer tiles */}
       <View style={styles.answersGrid}>
-        {(currentQ?.choices || []).map((choice, i) => (
-          <View key={i} style={[styles.answerTile, { backgroundColor: COLORS[i] }]}>
-            <Text style={styles.answerIcon}>{ICONS[i]}</Text>
-            <Text style={styles.answerText}>{choice}</Text>
-            {phase === 'results' && (
-              <Text style={styles.answerCount}>{answerCounts[i]} answers</Text>
-            )}
-          </View>
-        ))}
+        {(currentQ?.choices || []).map((choice, i) => {
+          let tileStyle = { backgroundColor: COLORS[i] };
+          
+          // Show host's answer with highlight
+          if (phase === 'question' && hostAnswered && i === hostAnswer) {
+            tileStyle = { ...tileStyle, borderWidth: 3, borderColor: '#FFD700' };
+          }
+          
+          // Show correct answer and host's result when phase is results
+          if (phase === 'results') {
+            if (i === currentQ.correct) {
+              tileStyle = { ...tileStyle, borderWidth: 4, borderColor: '#4CAF50' };
+            } else if (i === hostAnswer && i !== currentQ.correct) {
+              tileStyle = { ...tileStyle, opacity: 0.4 };
+            }
+          }
+          
+          return (
+            <TouchableOpacity
+              key={i}
+              style={[styles.answerTile, tileStyle]}
+              onPress={() => phase === 'question' && !hostAnswered && handleHostAnswer(i)}
+              disabled={phase !== 'question' || hostAnswered}
+              activeOpacity={hostAnswered ? 0.5 : 0.7}
+            >
+              <Text style={styles.answerIcon}>{ICONS[i]}</Text>
+              <Text style={styles.answerText}>{choice}</Text>
+              {phase === 'results' && (
+                <Text style={styles.answerCount}>{answerCounts[i]} answers</Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* Results overlay */}
@@ -285,6 +337,11 @@ export default function HostGameScreen() {
           <Text style={styles.correctLabel}>
             ✅ Correct: {currentQ?.choices?.[currentQ?.correct]}
           </Text>
+          {hostAnswered && (
+            <Text style={[styles.hostFeedback, hostAnswer === currentQ?.correct ? styles.hostCorrect : styles.hostWrong]}>
+              {hostAnswer === currentQ?.correct ? '✅ You got it right!' : '❌ You got it wrong'}
+            </Text>
+          )}
           <TouchableOpacity style={styles.nextBtn} onPress={nextQuestion}>
             <Text style={styles.nextBtnText}>
               {currentIndex + 1 >= questions.length ? 'Finish Game 🏆' : 'Next Question →'}
@@ -384,6 +441,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   correctLabel: { color: '#4CAF50', fontSize: 17, fontWeight: 'bold', marginBottom: 16 },
+  hostFeedback: { fontSize: 15, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' },
+  hostCorrect: { color: '#4CAF50' },
+  hostWrong: { color: '#FF6B6B' },
   nextBtn: {
     backgroundColor: '#7C4DFF',
     paddingVertical: 14,

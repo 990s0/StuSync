@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import DropDownPicker from 'react-native-dropdown-picker';
 import { useNavigation } from '@react-navigation/native';
-import { generateStudyQuestions } from '../services/gemini';
+import { generateStudyQuestions } from '../services/groq';
 import { getCourses, getRooms, searchCourses, searchRooms } from '../services/nebula';
 import { createSession, getCurrentUser } from '../services/supabase';
 import * as Haptics from 'expo-haptics';
@@ -234,7 +234,7 @@ export default function HostSessionScreen() {
           {isLoading ? (
             <ActivityIndicator color="white" />
           ) : (
-            <Text style={styles.aiButtonText}>Generate Study Questions (Gemini AI)</Text>
+            <Text style={styles.aiButtonText}>Generate Study Questions (Groq AI)</Text>
           )}
         </TouchableOpacity>
 

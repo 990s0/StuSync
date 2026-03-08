@@ -82,6 +82,10 @@ export default function GameScreen() {
         setSelectedAnswer(null);
         showQuestion(nextIndex, questions);
       }
+    }).on('broadcast', { event: 'show_results' }, () => {
+      if (isMounted) {
+        setPhase('results');
+      }
     }).on('broadcast', { event: 'quiz_finished' }, () => {
       if (isMounted) {
         clearInterval(timerRef.current);
@@ -205,15 +209,18 @@ export default function GameScreen() {
         {(currentQ?.choices || []).map((choice, i) => {
           let tileStyle = { backgroundColor: COLORS[i] };
           if (phase === 'answered') {
-            if (i === currentQ.correct) tileStyle = { ...tileStyle, borderWidth: 4, borderColor: '#fff' };
-            else if (i === selectedAnswer) tileStyle = { ...tileStyle, opacity: 0.4 };
+            if (i === selectedAnswer) tileStyle = { ...tileStyle, borderWidth: 3, borderColor: '#FFD700' };
+          }
+          if (phase === 'results') {
+            if (i === currentQ.correct) tileStyle = { ...tileStyle, borderWidth: 4, borderColor: '#4CAF50' };
+            else if (i === selectedAnswer && i !== currentQ.correct) tileStyle = { ...tileStyle, opacity: 0.4 };
           }
           return (
             <TouchableOpacity
               key={i}
               style={[styles.answerTile, tileStyle]}
               onPress={() => phase === 'question' && handleAnswer(i)}
-              disabled={phase === 'answered'}
+              disabled={phase !== 'question'}
             >
               <Text style={styles.answerIcon}>{ICONS[i]}</Text>
               <Text style={styles.answerText}>{choice}</Text>
@@ -226,10 +233,22 @@ export default function GameScreen() {
       {phase === 'answered' && (
         <View style={styles.feedbackBar}>
           <Text style={styles.feedbackText}>
-            {selectedAnswer === currentQ?.correct ? '✅ Correct!' : '❌ Wrong!'}
+            ✓ Answer submitted
           </Text>
           <Text style={styles.waitingForHostText}>
-            Waiting for host to continue...
+            Waiting for host to reveal answer...
+          </Text>
+        </View>
+      )}
+
+      {/* Results revealed */}
+      {phase === 'results' && (
+        <View style={styles.feedbackBar}>
+          <Text style={styles.feedbackText}>
+            {selectedAnswer === currentQ?.correct ? '✅ Correct!' : '❌ Wrong!'}
+          </Text>
+          <Text style={styles.correctAnswerText}>
+            Answer: {currentQ?.choices?.[currentQ?.correct]}
           </Text>
         </View>
       )}
@@ -341,4 +360,5 @@ const styles = StyleSheet.create({
   },
   feedbackText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   waitingForHostText: { color: '#B39DDB', fontSize: 14, marginTop: 12, textAlign: 'center', fontStyle: 'italic' },
+  correctAnswerText: { color: '#4CAF50', fontSize: 13, marginTop: 8, textAlign: 'center' },
 });
