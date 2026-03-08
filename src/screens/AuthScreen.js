@@ -11,6 +11,7 @@ export default function AuthScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [authStatus, setAuthStatus] = useState('');
 
   const handleAuth = async () => {
     console.log("!!! SIGN UP / LOGIN BUTTON PRESSED !!!");
@@ -28,6 +29,7 @@ export default function AuthScreen() {
     }
 
     setIsLoading(true);
+    setAuthStatus('');
     console.log("handleAuth started", { isLogin, email, username });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -43,14 +45,28 @@ export default function AuthScreen() {
       }
 
       if (result.success) {
-        console.log("Auth Successful:", isLogin ? "Login" : "Signup");
-        navigation.replace('Home');
+        console.log("Auth Successful Payload:", result.data);
+        const userData = result.data.user || result.data;
+        const sessionData = result.data.session || (result.data.access_token ? result.data : null);
+
+        // If identities is empty or session is missing, email confirmation might be needed
+        if (!isLogin && (!sessionData || (userData.identities && userData.identities.length === 0))) {
+          setAuthStatus("Success! CHECK YOUR EMAIL to confirm your account.");
+          Alert.alert("Check Your Email", "Signup successful! Please confirm your email before logging in.");
+          setIsLogin(true);
+        } else {
+          setAuthStatus("Success! Redirecting...");
+          navigation.replace('Home');
+        }
       } else {
-        console.error("Auth Failure:", result.error);
-        Alert.alert("Authentication Failed", result.error);
+        const errorMsg = typeof result.error === 'string' ? result.error : "Please try again.";
+        console.error("Auth Failure Error:", result.error);
+        setAuthStatus("Error: " + errorMsg);
+        Alert.alert("Auth Error", errorMsg);
       }
     } catch (e) {
       console.error("Auth Exception:", e);
+      setAuthStatus("Unexpected Error occurred.");
       Alert.alert("Error", "An unexpected error occurred during authentication.");
     } finally {
       setIsLoading(false);
@@ -119,6 +135,12 @@ export default function AuthScreen() {
             />
           </View>
 
+          {authStatus ? (
+            <View style={styles.statusBox}>
+              <Text style={styles.statusText}>{authStatus}</Text>
+            </View>
+          ) : null}
+
           <TouchableOpacity 
             style={[styles.button, isLoading && { opacity: 0.7 }, { borderWidth: 2, borderColor: '#3B82F6' }]} 
             onPress={() => {
@@ -139,6 +161,13 @@ export default function AuthScreen() {
             <Text style={styles.switchText}>
               {isLogin ? "Don't have an account? Sign Up" : "Already have an account? Login"}
             </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            onPress={() => navigation.replace('Home')} 
+            style={styles.skipButton}
+          >
+            <Text style={styles.skipText}>Skip to Dashboard (Test Mode)</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -201,5 +230,28 @@ const styles = StyleSheet.create({
   switchText: {
     color: '#3B82F6',
     fontSize: 16,
+  },
+  statusBox: {
+    width: '100%',
+    padding: 12,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 10,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  statusText: {
+    color: '#92400E',
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  skipButton: {
+    marginTop: 30,
+    padding: 10,
+  },
+  skipText: {
+    color: '#64748B',
+    fontSize: 14,
+    textDecorationLine: 'underline',
   }
 });

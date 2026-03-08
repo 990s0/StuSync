@@ -22,6 +22,7 @@ const supabaseAuthClient = axios.create({
   baseURL: `${SUPABASE_URL}/auth/v1`,
   headers: {
     'apikey': SUPABASE_ANON_KEY,
+    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
     'Content-Type': 'application/json'
   }
 });
@@ -38,15 +39,16 @@ export async function signUp(email, password, username) {
       data: { username } // Store username in user metadata
     });
     
-    const user = response.data.user;
+    const user = response.data.user || response.data;
     if (user) {
       currentUser = user;
-      sessionToken = response.data.access_token;
+      sessionToken = response.data.access_token || response.data.session?.access_token;
       // Also save to a public profiles table for easier querying
+      // We use the ID from the user object
       await saveProfile(user.id, email, username);
     }
     
-    return { success: true, user: response.data };
+    return { success: true, data: response.data };
   } catch (error) {
     console.error("Supabase Signup Error Details:", {
       status: error.response?.status,
