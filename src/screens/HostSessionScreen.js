@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import DropDownPicker from 'react-native-dropdown-picker';
 import { useNavigation } from '@react-navigation/native';
 import { generateStudyQuestions } from '../services/gemini';
-import { getCourses, getRooms } from '../services/nebula';
+import { getCourses, getRooms, searchCourses, searchRooms } from '../services/nebula';
+import { createSession, getCurrentUser } from '../services/supabase';
+import * as Haptics from 'expo-haptics';
 
 export default function HostSessionScreen() {
   const navigation = useNavigation();
@@ -12,6 +14,7 @@ export default function HostSessionScreen() {
   const [itinerary, setItinerary] = useState('');
   
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isNebulaLoading, setIsNebulaLoading] = useState(true);
   const [generatedQuestions, setGeneratedQuestions] = useState('');
   
@@ -32,8 +35,7 @@ export default function HostSessionScreen() {
         ]);
         setAvailableRooms(roomsData);
         setAvailableCourses(coursesData);
-        if (roomsData.length > 0) setRoom(roomsData[0].value);
-        if (coursesData.length > 0) setSubject(coursesData[0].value);
+        // We don't want to auto-select if we want the user to search
       } catch (e) {
         console.error("Nebula Load Error:", e);
       } finally {
@@ -42,6 +44,40 @@ export default function HostSessionScreen() {
     }
     loadNebulaData();
   }, []);
+
+  const handleSearchCourses = async (query) => {
+    console.log("Searching courses for:", query);
+    setIsRefreshing(true);
+    try {
+      if (!query || query.length === 0) {
+        const initial = await getCourses();
+        setAvailableCourses(initial);
+      } else {
+        const results = await searchCourses(query);
+        console.log("Course results found:", results.length);
+        setAvailableCourses(results);
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleSearchRooms = async (query) => {
+    console.log("Searching rooms for:", query);
+    setIsRefreshing(true);
+    try {
+      if (!query || query.length === 0) {
+        const initial = await getRooms();
+        setAvailableRooms(initial);
+      } else {
+        const results = await searchRooms(query);
+        console.log("Room results found:", results.length);
+        setAvailableRooms(results);
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const handleGenerateQuestions = async () => {
     if (!itinerary || !subject) {
@@ -55,110 +91,173 @@ export default function HostSessionScreen() {
     setIsLoading(false);
   };
 
-  const handleCreateSession = () => {
+  const handleCreateSession = async () => {
+    console.log("handleCreateSession called");
+    console.log("Current State - Room:", room, "Subject:", subject);
+    
     if (!room || !subject) {
+      console.log("Validation failed: Room or Subject missing");
       Alert.alert("Missing Info", "Room and Subject are required.");
       return;
     }
-    Alert.alert("Success", "Session Created! Notifications have been sent to relevant students via FCM.", [
-      { text: "OK", onPress: () => navigation.replace('Home') }
-    ]);
+
+    setIsLoading(true);
+    try {
+      const user = getCurrentUser();
+      console.log("Attempting to save session to Supabase as user:", user?.id);
+      
+      const result = await createSession({
+        title: itinerary ? (itinerary.length > 30 ? itinerary.substring(0, 30) + "..." : itinerary) : "Study Session",
+        class: subject,
+        building: room,
+        itinerary: itinerary,
+        hostName: user?.user_metadata?.username || user?.email || "Student",
+        hostMajor: "Student", // Could be expanded to user profile if available
+        hostId: user?.id
+      });
+
+      if (result.success) {
+        console.log("Session created in Supabase!");
+        Alert.alert("Success", "Session Created! Notifications have been sent to relevant students.", [
+          { text: "OK", onPress: () => {
+            console.log("Navigation to Home triggered");
+            navigation.replace('Home');
+          }}
+        ]);
+      } else {
+        console.error("Supabase Save Failed:", result.error);
+        Alert.alert("Error", "Could not save session. Please try again.");
+      }
+    } catch (e) {
+      console.error("Session Creation Error:", e);
+      Alert.alert("Error", "An unexpected error occurred.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.header}>Host a New Session</Text>
-      
-      {isNebulaLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#8B5CF6" />
-          <Text style={styles.loadingText}>Loading UTD Campus Data...</Text>
-        </View>
-      ) : (
-        <View style={{ zIndex: 3000 }}>
-          <View style={[styles.inputGroup, { zIndex: 4000 }]}>
-            <Text style={styles.label}>1. Find a Room (Location)</Text>
-            <DropDownPicker
-              open={openRoom}
-              value={room}
-              items={availableRooms}
-              setOpen={setOpenRoom}
-              setValue={setRoom}
-              setItems={setAvailableRooms}
-              searchable={true}
-              searchPlaceholder="Type a building or room..."
-              placeholder="Select a room"
-              style={styles.dropdown}
-              dropDownContainerStyle={styles.dropdownContainer}
-              listMode="SCROLLVIEW"
-              scrollViewProps={{ nestedScrollEnabled: true }}
-              zIndex={4000}
-              zIndexInverse={1000}
-            />
-          </View>
-
-          <View style={[styles.inputGroup, { zIndex: 2000 }]}>
-            <Text style={styles.label}>2. Class / Subject</Text>
-            <DropDownPicker
-              open={openSubject}
-              value={subject}
-              items={availableCourses}
-              setOpen={setOpenSubject}
-              setValue={setSubject}
-              setItems={setAvailableCourses}
-              searchable={true}
-              searchPlaceholder="Type a course name (e.g. CS 314)..."
-              placeholder="Select a subject"
-              style={styles.dropdown}
-              dropDownContainerStyle={styles.dropdownContainer}
-              listMode="SCROLLVIEW"
-              scrollViewProps={{ nestedScrollEnabled: true }}
-              zIndex={2000}
-              zIndexInverse={2000}
-            />
-          </View>
-        </View>
-      )}
-
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>3. Study Itinerary</Text>
-        <TextInput
-          style={[styles.input, styles.textArea]}
-          placeholder="Enter topics you plan to cover... (e.g. Trees, Graphs, Sorting algorithms)"
-          value={itinerary}
-          onChangeText={setItinerary}
-          multiline={true}
-          numberOfLines={4}
-        />
-      </View>
-
-      <TouchableOpacity 
-        style={styles.aiButton}
-        onPress={handleGenerateQuestions}
-        disabled={isLoading}
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={{ flex: 1 }}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+    >
+      <ScrollView 
+        style={styles.container}
+        contentContainerStyle={{ paddingBottom: 60 }} // Added to ensure buttons aren't cut off
+        keyboardShouldPersistTaps="handled" 
+        nestedScrollEnabled={true}
       >
-        {isLoading ? (
-          <ActivityIndicator color="white" />
+        <Text style={styles.header}>Host a New Session</Text>
+        
+        {isNebulaLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#8B5CF6" />
+            <Text style={styles.loadingText}>Loading UTD Campus Data...</Text>
+          </View>
         ) : (
-          <Text style={styles.aiButtonText}>Generate Study Questions (Gemini AI)</Text>
+          <View style={{ zIndex: 3000 }}>
+            <View style={[styles.inputGroup, { zIndex: 4000 }]}>
+              <Text style={styles.label}>1. Find a Room (Location)</Text>
+              <DropDownPicker
+                open={openRoom}
+                value={room}
+                items={availableRooms}
+                setOpen={setOpenRoom}
+                setValue={setRoom}
+                setItems={setAvailableRooms}
+                searchable={true}
+                disableLocalSearch={true}
+                loading={isRefreshing}
+                onChangeSearchText={handleSearchRooms}
+                searchPlaceholder="Type a building or room..."
+                placeholder="Select a room"
+                style={styles.dropdown}
+                dropDownContainerStyle={styles.dropdownContainer}
+                listMode="SCROLLVIEW"
+                scrollViewProps={{ nestedScrollEnabled: true }}
+                zIndex={4000}
+                zIndexInverse={1000}
+              />
+            </View>
+
+            <View style={[styles.inputGroup, { zIndex: 2000 }]}>
+              <Text style={styles.label}>2. Class / Subject</Text>
+              <DropDownPicker
+                open={openSubject}
+                value={subject}
+                items={availableCourses}
+                setOpen={setOpenSubject}
+                setValue={setSubject}
+                setItems={setAvailableCourses}
+                searchable={true}
+                disableLocalSearch={true}
+                loading={isRefreshing}
+                onChangeSearchText={handleSearchCourses}
+                searchPlaceholder="Type a course name (e.g. CS 314)..."
+                placeholder="Select a subject"
+                style={styles.dropdown}
+                dropDownContainerStyle={styles.dropdownContainer}
+                listMode="SCROLLVIEW"
+                scrollViewProps={{ nestedScrollEnabled: true }}
+                zIndex={2000}
+                zIndexInverse={2000}
+              />
+            </View>
+          </View>
         )}
-      </TouchableOpacity>
 
-      {generatedQuestions ? (
-        <View style={styles.resultsContainer}>
-          <Text style={styles.resultsHeader}>Generated Questions:</Text>
-          <Text style={styles.resultsText}>{generatedQuestions}</Text>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>3. Study Itinerary</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            placeholder="Enter topics you plan to cover... (e.g. Trees, Graphs, Sorting algorithms)"
+            value={itinerary}
+            onChangeText={setItinerary}
+            multiline={true}
+            numberOfLines={4}
+          />
         </View>
-      ) : null}
 
-      <TouchableOpacity 
-        style={styles.createButton}
-        onPress={handleCreateSession}
-      >
-        <Text style={styles.createButtonText}>Confirm & Create Session</Text>
-      </TouchableOpacity>
-      
-    </ScrollView>
+        <TouchableOpacity 
+          style={styles.aiButton}
+          onPress={handleGenerateQuestions}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <Text style={styles.aiButtonText}>Generate Study Questions (Gemini AI)</Text>
+          )}
+        </TouchableOpacity>
+
+        {generatedQuestions ? (
+          <View style={styles.resultsContainer}>
+            <Text style={styles.resultsHeader}>Generated Questions:</Text>
+            <Text style={styles.resultsText}>{generatedQuestions}</Text>
+          </View>
+        ) : null}
+
+        <TouchableOpacity 
+          style={[styles.createButton, isLoading && { opacity: 0.7 }]}
+          onPress={() => {
+            if (isLoading) return;
+            console.log("Create Button pressed!");
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            handleCreateSession();
+          }}
+          activeOpacity={0.6}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <Text style={styles.createButtonText}>Confirm & Create Session</Text>
+          )}
+        </TouchableOpacity>
+        
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -255,18 +354,21 @@ const styles = StyleSheet.create({
   createButton: {
     backgroundColor: '#10B981', // Green for success
     padding: 18,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 60, // Increased margin
+    marginTop: 20,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 6,
+    zIndex: 10, // Ensure it's above other elements
   },
   createButtonText: {
     color: 'white',
     fontWeight: 'bold',
     fontSize: 18,
+    letterSpacing: 0.5,
   }
 });

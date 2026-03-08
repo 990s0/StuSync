@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, ActivityIndicator, RefreshControl } from 'react-native';
 import { MapPin, BookOpen, User, Filter } from 'lucide-react-native';
+import { getSessions } from '../services/supabase';
 
 // Mock data reflecting what would be in Firestore
 const mockSessions = [
@@ -11,12 +12,31 @@ const mockSessions = [
 ];
 
 export default function FindSessionsScreen() {
-  const [sessions, setSessions] = useState(mockSessions);
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [sortOption, setSortOption] = useState('None');
   const [filterModalVisible, setFilterModalVisible] = useState(false);
 
+  const loadSessions = async (showRefreshing = false) => {
+    if (showRefreshing) setRefreshing(true);
+    else setLoading(true);
+    
+    try {
+      const data = await getSessions();
+      setSessions(data);
+    } finally {
+      setRefreshing(false);
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    loadSessions();
+  }, []);
+
   const applySort = (option) => {
-    let sorted = [...mockSessions];
+    let sorted = [...sessions];
     if (option === 'Class') {
       sorted.sort((a, b) => a.class.localeCompare(b.class));
     } else if (option === 'Building') {
@@ -64,12 +84,29 @@ export default function FindSessionsScreen() {
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={sessions}
-        keyExtractor={item => item.id}
-        renderItem={renderSessionItem}
-        contentContainerStyle={{ paddingBottom: 20 }}
-      />
+      {loading ? (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#3B82F6" />
+          <Text style={styles.loadingText}>Finding study sessions...</Text>
+        </View>
+      ) : sessions.length === 0 ? (
+        <View style={styles.centerContainer}>
+          <Text style={styles.emptyText}>No active sessions found.</Text>
+          <TouchableOpacity style={styles.refreshBtn} onPress={() => loadSessions()}>
+            <Text style={styles.refreshBtnText}>Refresh</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={sessions}
+          keyExtractor={item => item.id.toString()}
+          renderItem={renderSessionItem}
+          contentContainerStyle={{ paddingBottom: 20 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={() => loadSessions(true)} />
+          }
+        />
+      )}
 
       <Modal
         visible={filterModalVisible}
@@ -210,5 +247,29 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: '#64748B',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#64748B',
+    marginBottom: 20,
+  },
+  refreshBtn: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  refreshBtnText: {
+    color: 'white',
+    fontWeight: 'bold',
   }
 });

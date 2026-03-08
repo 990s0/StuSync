@@ -13,7 +13,7 @@ async function testGemini() {
     const result = await model.generateContent(prompt);
     console.log("Response:", result.response.text());
   } catch(e) {
-    console.error("Gemini Error:", e.message);
+    console.error("Gemini Error:", e);
   }
 }
 
