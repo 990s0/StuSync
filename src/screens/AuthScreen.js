@@ -7,8 +7,8 @@ export default function AuthScreen() {
   const navigation = useNavigation();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
 
   const handleAuth = async () => {
     if (!email.includes('@')) {
@@ -33,30 +33,54 @@ export default function AuthScreen() {
       <Text style={styles.title}>{isLogin ? 'Welcome Back!' : 'Create Account'}</Text>
       
       {!isLogin && (
-        <TextInput
-          style={styles.input}
-          placeholder="Full Name"
-          value={name}
-          onChangeText={setName}
-        />
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Username / Full Name</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Type your username or name"
+            value={username}
+            onChangeText={setUsername}
+          />
+        </View>
       )}
 
-      <TextInput
-        style={styles.input}
-        placeholder="School Email (.edu)"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-      />
+      {isLogin && (
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Username or Email</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Type your username or school email"
+            value={username}
+            onChangeText={setUsername}
+            autoCapitalize="none"
+          />
+        </View>
+      )}
+
+      {!isLogin && (
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>School Email</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Type your .edu email"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+        </View>
+      )}
       
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
+      <View style={styles.inputContainer}>
+        <Text style={styles.inputLabel}>Password</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Type your password"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
+      </View>
 
       <TouchableOpacity style={styles.button} onPress={handleAuth}>
         <Text style={styles.buttonText}>{isLogin ? 'Login' : 'Sign Up'}</Text>
@@ -85,12 +109,22 @@ const styles = StyleSheet.create({
     color: '#1E3A8A',
     marginBottom: 40,
   },
+  inputContainer: {
+    width: '100%',
+    marginBottom: 15,
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#334155',
+    marginBottom: 8,
+    marginLeft: 4,
+  },
   input: {
     width: '100%',
     backgroundColor: '#E2E8F0',
     padding: 15,
     borderRadius: 10,
-    marginBottom: 15,
     fontSize: 16,
   },
   button: {

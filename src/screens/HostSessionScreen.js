@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import DropDownPicker from 'react-native-dropdown-picker';
 import { useNavigation } from '@react-navigation/native';
 import { generateStudyQuestions } from '../services/gemini';
+import { getCourses, getRooms } from '../services/nebula';
 
 export default function HostSessionScreen() {
   const navigation = useNavigation();
@@ -10,7 +12,36 @@ export default function HostSessionScreen() {
   const [itinerary, setItinerary] = useState('');
   
   const [isLoading, setIsLoading] = useState(false);
+  const [isNebulaLoading, setIsNebulaLoading] = useState(true);
   const [generatedQuestions, setGeneratedQuestions] = useState('');
+  
+  const [availableRooms, setAvailableRooms] = useState([]);
+  const [availableCourses, setAvailableCourses] = useState([]);
+  
+  // Dropdown Picker specific states
+  const [openRoom, setOpenRoom] = useState(false);
+  const [openSubject, setOpenSubject] = useState(false);
+
+  React.useEffect(() => {
+    async function loadNebulaData() {
+      setIsNebulaLoading(true);
+      try {
+        const [roomsData, coursesData] = await Promise.all([
+          getRooms(),
+          getCourses()
+        ]);
+        setAvailableRooms(roomsData);
+        setAvailableCourses(coursesData);
+        if (roomsData.length > 0) setRoom(roomsData[0].value);
+        if (coursesData.length > 0) setSubject(coursesData[0].value);
+      } catch (e) {
+        console.error("Nebula Load Error:", e);
+      } finally {
+        setIsNebulaLoading(false);
+      }
+    }
+    loadNebulaData();
+  }, []);
 
   const handleGenerateQuestions = async () => {
     if (!itinerary || !subject) {
@@ -38,25 +69,56 @@ export default function HostSessionScreen() {
     <ScrollView style={styles.container}>
       <Text style={styles.header}>Host a New Session</Text>
       
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>1. Find a Room (Location)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g. GDC 4.302"
-          value={room}
-          onChangeText={setRoom}
-        />
-      </View>
+      {isNebulaLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#8B5CF6" />
+          <Text style={styles.loadingText}>Loading UTD Campus Data...</Text>
+        </View>
+      ) : (
+        <View style={{ zIndex: 3000 }}>
+          <View style={[styles.inputGroup, { zIndex: 4000 }]}>
+            <Text style={styles.label}>1. Find a Room (Location)</Text>
+            <DropDownPicker
+              open={openRoom}
+              value={room}
+              items={availableRooms}
+              setOpen={setOpenRoom}
+              setValue={setRoom}
+              setItems={setAvailableRooms}
+              searchable={true}
+              searchPlaceholder="Type a building or room..."
+              placeholder="Select a room"
+              style={styles.dropdown}
+              dropDownContainerStyle={styles.dropdownContainer}
+              listMode="SCROLLVIEW"
+              scrollViewProps={{ nestedScrollEnabled: true }}
+              zIndex={4000}
+              zIndexInverse={1000}
+            />
+          </View>
 
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>2. Class / Subject</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g. CS 314 Data Structures"
-          value={subject}
-          onChangeText={setSubject}
-        />
-      </View>
+          <View style={[styles.inputGroup, { zIndex: 2000 }]}>
+            <Text style={styles.label}>2. Class / Subject</Text>
+            <DropDownPicker
+              open={openSubject}
+              value={subject}
+              items={availableCourses}
+              setOpen={setOpenSubject}
+              setValue={setSubject}
+              setItems={setAvailableCourses}
+              searchable={true}
+              searchPlaceholder="Type a course name (e.g. CS 314)..."
+              placeholder="Select a subject"
+              style={styles.dropdown}
+              dropDownContainerStyle={styles.dropdownContainer}
+              listMode="SCROLLVIEW"
+              scrollViewProps={{ nestedScrollEnabled: true }}
+              zIndex={2000}
+              zIndexInverse={2000}
+            />
+          </View>
+        </View>
+      )}
 
       <View style={styles.inputGroup}>
         <Text style={styles.label}>3. Study Itinerary</Text>
@@ -128,6 +190,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     fontSize: 16,
+  },
+  dropdown: {
+    backgroundColor: 'white',
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    minHeight: 50,
+  },
+  dropdownContainer: {
+    backgroundColor: 'white',
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    maxHeight: 250, // Added to prevent it from dropping infinitely
+  },
+  loadingContainer: {
+    padding: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: '#64748B',
+    fontSize: 14,
   },
   textArea: {
     height: 100,
